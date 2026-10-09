@@ -1,0 +1,42 @@
+{
+  "features": [
+    "rainfall_1h_mm",
+    "rainfall_3h_mm",
+    "current_water_level_cm",
+    "water_rise_rate_cm_per_min",
+    "elevation_m",
+    "drainage_capacity_index",
+    "soil_saturation_pct",
+    "historical_flood_index"
+  ],
+  "metrics_30m": {
+    "r2": 0.999,
+    "mae": 1.16,
+    "rmse": 2.0
+  },
+  "metrics_60m": {
+    "r2": 0.999,
+    "mae": 1.78,
+    "rmse": 3.19
+  },
+  "feature_importances_30m": {
+    "rainfall_1h_mm": 0.0374,
+    "rainfall_3h_mm": 0.0001,
+    "current_water_level_cm": 0.1896,
+    "water_rise_rate_cm_per_min": 0.7013,
+    "elevation_m": 0.0715,
+    "drainage_capacity_index": 0.0001,
+    "soil_saturation_pct": 0.0001,
+    "historical_flood_index": 0.0
+  },
+  "feature_importances_60m": {
+    "rainfall_1h_mm": 0.0347,
+    "rainfall_3h_mm": 0.0001,
+    "current_water_level_cm": 0.1441,
+    "water_rise_rate_cm_per_min": 0.7555,
+    "elevation_m": 0.0652,
+    "drainage_capacity_index": 0.0001,
+    "soil_saturation_pct": 0.0001,
+    "historical_flood_index": 0.0001
+  }
+}

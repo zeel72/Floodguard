@@ -9,6 +9,8 @@ try:
         ZonePrediction
     )
     from app.config import settings
+    from app.ml.model import predict_water_level
+    from app.core.simulator import simulator
 except ImportError:
     from backend.app.schemas.prediction import (
         PredictionRequest, 
@@ -17,6 +19,8 @@ except ImportError:
         ZonePrediction
     )
     from backend.app.config import settings
+    from backend.app.ml.model import predict_water_level
+    from backend.app.core.simulator import simulator
 
 router = APIRouter(prefix="/predictions", tags=["Hydrological AI Predictions"])
 
@@ -24,117 +28,75 @@ router = APIRouter(prefix="/predictions", tags=["Hydrological AI Predictions"])
 @router.post("/predict", response_model=PredictionResponse)
 def compute_prediction(req: PredictionRequest):
     """
-    Compute 30-minute and 60-minute forward water depth forecasts based on
-    current depth, rainfall intensity, rise rate, and elevation.
+    Compute 30-minute and 60-minute forward water depth forecasts using
+    the trained dual-horizon XGBoost machine learning regressors.
     """
-    # Baseline physical approximation before offline XGBoost model loads
-    rise_30m = req.water_rise_rate_cm_per_min * 30.0 * 0.75 + (req.rainfall_1h_mm * 0.15)
-    rise_60m = req.water_rise_rate_cm_per_min * 60.0 * 0.65 + (req.rainfall_1h_mm * 0.35)
-    
-    pred_30m = max(req.current_water_depth_cm + rise_30m, 0.0)
-    pred_60m = max(req.current_water_depth_cm + rise_60m, 0.0)
-    
-    # Assess risk level
-    if pred_60m >= settings.CRITICAL_WATER_DEPTH_CM or pred_30m >= settings.HIGH_WATER_DEPTH_CM:
-        risk = "CRITICAL"
-        prob = 92.0
-    elif pred_60m >= settings.HIGH_WATER_DEPTH_CM:
-        risk = "HIGH"
-        prob = 74.0
-    elif pred_60m >= settings.MODERATE_WATER_DEPTH_CM:
-        risk = "MODERATE"
-        prob = 45.0
-    else:
-        risk = "LOW"
-        prob = 12.0
+    raw_input = {
+        "rainfall_1h_mm": req.rainfall_1h_mm,
+        "current_water_level_cm": req.current_water_depth_cm,
+        "water_rise_rate_cm_per_min": req.water_rise_rate_cm_per_min,
+        "elevation_m": req.elevation_m,
+        "drainage_capacity_index": req.drainage_capacity_index,
+        "soil_saturation_pct": req.soil_saturation_pct
+    }
 
-    time_to_crit = None
-    if req.water_rise_rate_cm_per_min > 0:
-        remaining_to_90 = max(settings.CRITICAL_WATER_DEPTH_CM - req.current_water_depth_cm, 0.0)
-        time_to_crit = round(remaining_to_90 / req.water_rise_rate_cm_per_min, 1)
+    ml_result = predict_water_level(raw_input)
 
     factors = [
         PredictionFactor(
-            feature_name="water_rise_rate",
-            contribution_weight=0.45,
-            description=f"Rapid velocity of +{req.water_rise_rate_cm_per_min} cm/min"
-        ),
-        PredictionFactor(
-            feature_name="rainfall_1h_mm",
-            contribution_weight=0.35,
-            description=f"Precipitation influx of {req.rainfall_1h_mm} mm/h"
-        ),
-        PredictionFactor(
-            feature_name="elevation_m",
-            contribution_weight=-0.20,
-            description=f"Catchment elevation at {req.elevation_m}m above datum"
+            feature_name=f["feature"],
+            contribution_weight=f["impact_pct"] / 100.0,
+            description=f"{f['label']}: {f['value']}"
         )
+        for f in ml_result.get("factors", [])
     ]
+
+    rec = "Reroute emergency transports away from low-lying basin" if ml_result["risk_level"] in ["HIGH", "CRITICAL"] else "Safe for standard emergency vehicle dispatch"
 
     return PredictionResponse(
         zone_id=req.zone_id,
-        current_depth_cm=req.current_water_depth_cm,
-        predicted_depth_30m_cm=round(pred_30m, 1),
-        predicted_depth_60m_cm=round(pred_60m, 1),
-        risk_level=risk,
-        submergence_probability_pct=prob,
-        time_to_critical_min=time_to_crit,
-        model_version="xgboost-hydrology-v1",
+        current_depth_cm=ml_result["current_water_level_cm"],
+        predicted_depth_30m_cm=ml_result["predicted_depth_30m_cm"],
+        predicted_depth_60m_cm=ml_result["predicted_depth_60m_cm"],
+        risk_level=ml_result["risk_level"],
+        submergence_probability_pct=ml_result["submergence_probability_pct"],
+        time_to_critical_min=ml_result["time_to_critical_min"],
+        model_version=f"xgboost-v1 ({ml_result['engine']})",
         top_factors=factors,
-        recommendation="Reroute emergency transports away from underpass corridor" if risk in ["HIGH", "CRITICAL"] else "Maintain standard transit monitoring"
+        recommendation=rec
     )
 
 
 @router.get("", response_model=List[ZonePrediction])
 def get_all_zone_predictions():
-    """Retrieve current 30m and 60m forecasts across all urban zones."""
-    return [
-        ZonePrediction(
-            zone_id="ZONE_B",
-            zone_name="Zone B (Central Underpass)",
-            current_depth_cm=78.4,
-            predicted_depth_30m_cm=92.1,
-            predicted_depth_60m_cm=115.4,
-            risk_level="CRITICAL",
-            time_to_critical_min=18.0,
-            submergence_probability_pct=94.0,
-            elevation_m=6.2,
-            sensor_id="SN-101"
-        ),
-        ZonePrediction(
-            zone_id="ZONE_C",
-            zone_name="Zone C (Riverfront Culvert)",
-            current_depth_cm=64.2,
-            predicted_depth_30m_cm=76.8,
-            predicted_depth_60m_cm=88.5,
-            risk_level="HIGH",
-            time_to_critical_min=29.0,
-            submergence_probability_pct=78.0,
-            elevation_m=7.1,
-            sensor_id="SN-102"
-        ),
-        ZonePrediction(
-            zone_id="ZONE_D",
-            zone_name="Zone D (Metro Station)",
-            current_depth_cm=46.0,
-            predicted_depth_30m_cm=52.0,
-            predicted_depth_60m_cm=59.0,
-            risk_level="MODERATE",
-            time_to_critical_min=65.0,
-            submergence_probability_pct=42.0,
-            elevation_m=12.5,
-            sensor_id="SN-103"
-        ),
-        ZonePrediction(
-            zone_id="ZONE_E",
-            zone_name="Zone E (Hospital Access)",
-            current_depth_cm=22.5,
-            predicted_depth_30m_cm=24.0,
-            predicted_depth_60m_cm=26.0,
-            risk_level="LOW",
-            time_to_critical_min=None,
-            submergence_probability_pct=8.0,
-            elevation_m=16.8,
-            sensor_id="SN-104"
-        )
-    ]
+    """
+    Retrieve real-time 30m and 60m XGBoost forecasts across all monitored city zones.
+    """
+    state = simulator.get_status()
+    rainfall = state["rainfall_1h_mm"]
+    soil_sat = state["soil_saturation_pct"]
+    predictions = []
+
+    for z in state["zones"]:
+        ml_res = predict_water_level({
+            "rainfall_1h_mm": rainfall,
+            "current_water_level_cm": z["water_depth_cm"],
+            "water_rise_rate_cm_per_min": z["rise_rate_cm_per_min"],
+            "elevation_m": z["elevation_m"],
+            "soil_saturation_pct": soil_sat
+        })
+
+        predictions.append(ZonePrediction(
+            zone_id=z["zone_id"],
+            zone_name=z["name"],
+            current_depth_cm=z["water_depth_cm"],
+            predicted_depth_30m_cm=ml_res["predicted_depth_30m_cm"],
+            predicted_depth_60m_cm=ml_res["predicted_depth_60m_cm"],
+            risk_level=ml_res["risk_level"],
+            time_to_critical_min=ml_res["time_to_critical_min"],
+            submergence_probability_pct=ml_res["submergence_probability_pct"],
+            elevation_m=z["elevation_m"],
+            sensor_id=z["sensor_id"]
+        ))
+
+    return predictions
