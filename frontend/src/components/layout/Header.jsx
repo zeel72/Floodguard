@@ -79,6 +79,12 @@ export default function Header({
             </span>
           </button>
 
+          {/* Hardware Sensor Node Status */}
+          <div className="status-chip" title="ESP8266 + HC-SR04 Hardware Telemetry Pipeline">
+            <Activity size={14} style={{ color: mode === 'real' ? '#10b981' : '#38bdf8' }} />
+            <span>ESP8266: <strong>{mode === 'real' ? 'NODE ACTIVE' : 'TELEMETRY READY'}</strong></span>
+          </div>
+
           {/* AWS Cloud Connection */}
           <div className="status-chip" title="AWS Cloud Infrastructure State">
             <Database size={14} style={{ color: awsConnected ? '#10b981' : '#f59e0b' }} />

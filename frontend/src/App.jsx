@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Header from './components/layout/Header';
 import MetricCard from './components/metrics/MetricCard';
 import SimulationControls, { PRESETS } from './components/layout/SimulationControls';
+import FloodMap from './components/map/FloodMap';
 import { 
   SENSOR_NODES, 
   ACTIVE_ALERTS, 
@@ -11,7 +12,8 @@ import {
   setScenario as apiSetScenario,
   advanceSimulationTick as apiAdvanceTick,
   adjustRainfall as apiAdjustRainfall,
-  getSimulationStatus as apiGetStatus
+  getSimulationStatus as apiGetStatus,
+  getZonesGeoJSON as apiGetZonesGeoJSON
 } from './services/api';
 import { 
   CloudRain, 
@@ -43,14 +45,32 @@ export default function App() {
   const [soilSaturation, setSoilSaturation] = useState(88.0);
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
   const [sensors, setSensors] = useState(SENSOR_NODES);
+  const [zonesGeoJSON, setZonesGeoJSON] = useState(null);
+
+  const fetchZones = async () => {
+    try {
+      const geo = await apiGetZonesGeoJSON();
+      if (geo && geo.features) {
+        setZonesGeoJSON(geo);
+      }
+    } catch (err) {
+      // Mock fallback
+    }
+  };
 
   // Poll or sync simulation state on mount
   useEffect(() => {
     async function initSim() {
       try {
-        const state = await apiGetStatus();
+        const [state, geo] = await Promise.all([
+          apiGetStatus(),
+          apiGetZonesGeoJSON()
+        ]);
         if (state && state.rainfall_1h_mm !== undefined) {
           applySimulationState(state);
+        }
+        if (geo && geo.features) {
+          setZonesGeoJSON(geo);
         }
       } catch (err) {
         // Mock fallback active
@@ -90,9 +110,13 @@ export default function App() {
   const handleSelectPreset = async (presetId) => {
     setActivePreset(presetId);
     try {
-      const res = await apiSetScenario(presetId);
-      const state = await apiGetStatus();
+      await apiSetScenario(presetId);
+      const [state, geo] = await Promise.all([
+        apiGetStatus(),
+        apiGetZonesGeoJSON()
+      ]);
       if (state) applySimulationState(state);
+      if (geo) setZonesGeoJSON(geo);
     } catch (err) {
       // Local fallback calculation
       const p = PRESETS.find((x) => x.id === presetId);
@@ -110,8 +134,12 @@ export default function App() {
     setRainfall(newVal);
     try {
       await apiAdjustRainfall(newVal);
-      const state = await apiGetStatus();
+      const [state, geo] = await Promise.all([
+        apiGetStatus(),
+        apiGetZonesGeoJSON()
+      ]);
       if (state) applySimulationState(state);
+      if (geo) setZonesGeoJSON(geo);
     } catch (err) {
       setCurrentDepth(newVal * 0.7);
     }
@@ -124,6 +152,7 @@ export default function App() {
       if (res && res.state) {
         applySimulationState(res.state);
       }
+      fetchZones();
     } catch (err) {
       setCurrentDepth((prev) => Math.min(prev + (riseRate * mins), 200));
     }
@@ -132,6 +161,7 @@ export default function App() {
   const handleReset = async () => {
     await handleSelectPreset('dry');
     setElapsedMinutes(0);
+    fetchZones();
   };
 
   const handleToggleMode = () => {
@@ -321,93 +351,12 @@ export default function App() {
                 </div>
               </div>
 
-              {/* High-Tech Tactical HUD / Map Container */}
-              <div className="tactical-display" id="tactical-radar-viewport">
-                <div className="radar-sweep" />
-
-                {/* Tactical Radar Center Reticle & Nodes */}
-                <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: '24px' }}>
-                  <div style={{ 
-                    display: 'inline-flex', 
-                    padding: '8px 16px', 
-                    background: 'rgba(7, 13, 24, 0.85)', 
-                    border: '1px solid rgba(56, 189, 248, 0.4)', 
-                    borderRadius: '24px',
-                    marginBottom: '14px',
-                    boxShadow: '0 0 20px rgba(56, 189, 248, 0.25)'
-                  }}>
-                    <span style={{ color: '#38bdf8', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span className="pulse-dot" />
-                      SIMULATION ACTIVE: {activePreset.toUpperCase().replace('_', ' ')} • T+{elapsedMinutes}M
-                    </span>
-                  </div>
-
-                  <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.4rem', fontWeight: 800, color: '#f8fafc', marginBottom: '8px' }}>
-                    Hydrological Risk Layers & Route Waypoints
-                  </h2>
-                  <p style={{ color: '#94a3b8', maxWidth: '520px', margin: '0 auto 18px', fontSize: '0.82rem' }}>
-                    Live spatial simulation modeling gravity runoff, stormwater drainage throughput, and water rise velocity across city zones.
-                  </p>
-
-                  {/* Interactive Node Coordinates Grid */}
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
-                    gap: '10px', 
-                    maxWidth: '650px', 
-                    margin: '0 auto' 
-                  }}>
-                    {sensors.map((sensor) => (
-                      <div 
-                        key={sensor.id}
-                        style={{
-                          background: 'rgba(15, 23, 42, 0.85)',
-                          border: `1px solid ${sensor.risk === 'CRITICAL' ? 'rgba(239, 68, 68, 0.4)' : sensor.risk === 'HIGH' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(56, 189, 248, 0.2)'}`,
-                          borderRadius: '8px',
-                          padding: '10px',
-                          textAlign: 'left'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: '#94a3b8' }}>{sensor.id}</span>
-                          <span className={`panel-badge ${getThreatBadgeClass(sensor.risk)}`} style={{ fontSize: '0.65rem' }}>
-                            {sensor.risk}
-                          </span>
-                        </div>
-                        <div style={{ fontWeight: 700, fontSize: '0.8rem', color: '#f8fafc' }}>{sensor.name}</div>
-                        <div style={{ fontSize: '0.72rem', color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
-                          Depth: {sensor.depth_cm}cm ({sensor.rise_rate})
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Bottom HUD Telemetry Strip */}
-                <div style={{ 
-                  position: 'absolute', 
-                  bottom: '12px', 
-                  left: '16px', 
-                  right: '16px', 
-                  background: 'rgba(7, 13, 24, 0.85)', 
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '6px',
-                  padding: '8px 14px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: '0.75rem',
-                  fontFamily: 'var(--font-mono)'
-                }}>
-                  <span style={{ color: '#94a3b8' }}>
-                    INFLUX: {rainfall.toFixed(1)} mm/h • SOIL SAT: {soilSaturation.toFixed(0)}% • SIMULATED T+{elapsedMinutes}m
-                  </span>
-                  <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <CheckCircle2 size={13} />
-                    ZERO-HARDWARE SIMULATOR ONLINE
-                  </span>
-                </div>
-              </div>
+              {/* Phase 8: Interactive React-Leaflet GIS Flood Map */}
+              <FloodMap 
+                zonesGeoJSON={zonesGeoJSON}
+                sensors={sensors}
+                activeFilter={filterLayer}
+              />
 
               {/* Water Level Horizon Barometer */}
               <div style={{ marginTop: '14px', padding: '12px', background: 'rgba(15, 23, 42, 0.5)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
