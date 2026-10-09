@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/layout/Header';
 import MetricCard from './components/metrics/MetricCard';
+import SimulationControls, { PRESETS } from './components/layout/SimulationControls';
 import { 
-  SIMULATION_SCENARIOS, 
-  INITIAL_METRICS, 
   SENSOR_NODES, 
   ACTIVE_ALERTS, 
   ROUTE_DEMO 
 } from './services/mockData';
+import {
+  setScenario as apiSetScenario,
+  advanceSimulationTick as apiAdvanceTick,
+  adjustRainfall as apiAdjustRainfall,
+  getSimulationStatus as apiGetStatus
+} from './services/api';
 import { 
   CloudRain, 
   Waves, 
@@ -19,33 +24,114 @@ import {
   Cpu, 
   CheckCircle2, 
   AlertTriangle, 
-  Sparkles,
-  Layers,
   ShieldCheck,
-  Zap,
-  SlidersHorizontal,
-  Flame,
   ArrowRight
 } from 'lucide-react';
 
 export default function App() {
-  const [activeScenarioKey, setActiveScenarioKey] = useState('heavy_monsoon');
+  const [activePreset, setActivePreset] = useState('flash_flood');
   const [systemMode, setSystemMode] = useState('simulation');
   const [filterLayer, setFilterLayer] = useState('all');
 
-  const currentScenario = SIMULATION_SCENARIOS[activeScenarioKey];
+  // Dynamic simulation telemetry state
+  const [rainfall, setRainfall] = useState(95.0);
+  const [currentDepth, setCurrentDepth] = useState(78.4);
+  const [predicted30m, setPredicted30m] = useState(94.2);
+  const [predicted60m, setPredicted60m] = useState(118.0);
+  const [riskLevel, setRiskLevel] = useState('CRITICAL');
+  const [riseRate, setRiseRate] = useState(3.8);
+  const [soilSaturation, setSoilSaturation] = useState(88.0);
+  const [elapsedMinutes, setElapsedMinutes] = useState(0);
+  const [sensors, setSensors] = useState(SENSOR_NODES);
 
-  // Derive dynamic metrics based on active simulation scenario
-  const metrics = {
-    rainfall_1h_mm: currentScenario.rainfall_mm,
-    current_depth_cm: currentScenario.maxDepth_cm,
-    predicted_30m_cm: currentScenario.depth30m,
-    predicted_60m_cm: currentScenario.depth60m,
-    flood_probability_pct: currentScenario.prob_pct,
-    risk_level: currentScenario.risk,
-    rise_rate_cm_per_min: parseFloat(currentScenario.trend),
-    time_to_critical_min: currentScenario.timeToCrit_min,
-    active_warnings_count: currentScenario.activeAlerts
+  // Poll or sync simulation state on mount
+  useEffect(() => {
+    async function initSim() {
+      try {
+        const state = await apiGetStatus();
+        if (state && state.rainfall_1h_mm !== undefined) {
+          applySimulationState(state);
+        }
+      } catch (err) {
+        // Mock fallback active
+      }
+    }
+    initSim();
+  }, []);
+
+  const applySimulationState = (state) => {
+    setRainfall(state.rainfall_1h_mm);
+    setCurrentDepth(state.max_water_depth_cm);
+    setPredicted30m(state.predicted_depth_30m_cm);
+    setPredicted60m(state.predicted_depth_60m_cm);
+    setRiskLevel(state.city_risk_level);
+    setSoilSaturation(state.soil_saturation_pct);
+    setElapsedMinutes(state.simulated_minutes_elapsed);
+    if (state.active_preset) setActivePreset(state.active_preset);
+
+    if (state.zones && state.zones.length > 0) {
+      setSensors((prev) => 
+        prev.map((s) => {
+          const match = state.zones.find((z) => z.sensor_id === s.id);
+          if (match) {
+            return {
+              ...s,
+              depth_cm: match.water_depth_cm,
+              rise_rate: `${match.rise_rate_cm_per_min > 0 ? '+' : ''}${match.rise_rate_cm_per_min} cm/min`,
+              risk: match.risk_level
+            };
+          }
+          return s;
+        })
+      );
+    }
+  };
+
+  const handleSelectPreset = async (presetId) => {
+    setActivePreset(presetId);
+    try {
+      const res = await apiSetScenario(presetId);
+      const state = await apiGetStatus();
+      if (state) applySimulationState(state);
+    } catch (err) {
+      // Local fallback calculation
+      const p = PRESETS.find((x) => x.id === presetId);
+      if (p) {
+        setRainfall(p.rain);
+        setRiskLevel(p.risk);
+        setCurrentDepth(p.rain * 0.7);
+        setPredicted30m(p.rain * 0.9);
+        setPredicted60m(p.rain * 1.15);
+      }
+    }
+  };
+
+  const handleRainfallChange = async (newVal) => {
+    setRainfall(newVal);
+    try {
+      await apiAdjustRainfall(newVal);
+      const state = await apiGetStatus();
+      if (state) applySimulationState(state);
+    } catch (err) {
+      setCurrentDepth(newVal * 0.7);
+    }
+  };
+
+  const handleTick = async (mins = 3) => {
+    setElapsedMinutes((prev) => prev + mins);
+    try {
+      const res = await apiAdvanceTick(mins);
+      if (res && res.state) {
+        applySimulationState(res.state);
+      }
+    } catch (err) {
+      setCurrentDepth((prev) => Math.min(prev + (riseRate * mins), 200));
+    }
+  };
+
+  const handleReset = async () => {
+    await handleSelectPreset('dry');
+    setElapsedMinutes(0);
   };
 
   const handleToggleMode = () => {
@@ -68,13 +154,13 @@ export default function App() {
         mode={systemMode}
         onToggleMode={handleToggleMode}
         awsConnected={true}
-        riskLevel={metrics.risk_level}
+        riskLevel={riskLevel}
       />
 
       <main className="main-content">
         <div className="command-grid">
           {/* ==============================================================
-              LEFT COLUMN: Hydrological Telemetry & AI Forecasting
+              LEFT COLUMN: Hydrological Telemetry & Simulation Controls
               ============================================================== */}
           <section className="command-col command-col-left" aria-label="Hydrology and Telemetry">
             {/* Real-time KPI Cards */}
@@ -84,89 +170,73 @@ export default function App() {
                   <Activity size={16} style={{ color: '#38bdf8' }} />
                   Telemetry Overview
                 </span>
-                <span className={`panel-badge ${getThreatBadgeClass(metrics.risk_level)}`}>
-                  {metrics.risk_level}
+                <span className={`panel-badge ${getThreatBadgeClass(riskLevel)}`}>
+                  {riskLevel}
                 </span>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <MetricCard 
                   label="Rainfall Intensity"
-                  value={metrics.rainfall_1h_mm.toFixed(1)}
+                  value={rainfall.toFixed(1)}
                   unit="mm/h"
-                  trend={currentScenario.trend}
-                  trendDirection={metrics.rise_rate_cm_per_min > 0 ? 'up' : 'down'}
-                  riskLevel={metrics.rainfall_1h_mm > 75 ? 'CRITICAL' : metrics.rainfall_1h_mm > 50 ? 'HIGH' : metrics.rainfall_1h_mm > 25 ? 'MODERATE' : 'SAFE'}
-                  progressPct={(metrics.rainfall_1h_mm / 120) * 100}
+                  trend={`${rainfall > 50 ? 'Severe Influx' : 'Normal Flow'}`}
+                  trendDirection={rainfall > 40 ? 'up' : 'down'}
+                  riskLevel={rainfall > 85 ? 'CRITICAL' : rainfall > 55 ? 'HIGH' : rainfall > 25 ? 'MODERATE' : 'SAFE'}
+                  progressPct={(rainfall / 140) * 100}
                   icon={CloudRain}
                   subtext="Meteorological Doppler Radar"
                 />
 
                 <MetricCard 
                   label="Max Street Water Depth"
-                  value={metrics.current_depth_cm.toFixed(1)}
+                  value={currentDepth.toFixed(1)}
                   unit="cm"
-                  trend={`${metrics.rise_rate_cm_per_min > 0 ? '+' : ''}${metrics.rise_rate_cm_per_min.toFixed(1)} cm/min`}
-                  trendDirection={metrics.rise_rate_cm_per_min > 0 ? 'up' : 'down'}
-                  riskLevel={metrics.current_depth_cm >= 80 ? 'CRITICAL' : metrics.current_depth_cm >= 60 ? 'HIGH' : metrics.current_depth_cm >= 40 ? 'MODERATE' : 'SAFE'}
-                  progressPct={(metrics.current_depth_cm / 100) * 100}
+                  trend={`${riseRate > 0 ? '+' : ''}${riseRate.toFixed(1)} cm/min`}
+                  trendDirection={riseRate > 0 ? 'up' : 'down'}
+                  riskLevel={currentDepth >= 85 ? 'CRITICAL' : currentDepth >= 60 ? 'HIGH' : currentDepth >= 40 ? 'MODERATE' : 'SAFE'}
+                  progressPct={(currentDepth / 110) * 100}
                   icon={Waves}
-                  subtext="HC-SR04 Ultrasonic Ingestion"
+                  subtext="Ultrasonic HC-SR04 Stream"
                 />
 
                 <MetricCard 
                   label="XGBoost 30m Prediction"
-                  value={metrics.predicted_30m_cm.toFixed(1)}
+                  value={predicted30m.toFixed(1)}
                   unit="cm"
-                  trend={`60m Forecast: ${metrics.predicted_60m_cm.toFixed(1)} cm`}
+                  trend={`60m Forecast: ${predicted60m.toFixed(1)} cm`}
                   trendDirection="up"
-                  riskLevel={metrics.predicted_30m_cm >= 90 ? 'CRITICAL' : metrics.predicted_30m_cm >= 70 ? 'HIGH' : 'MODERATE'}
-                  progressPct={(metrics.predicted_30m_cm / 120) * 100}
+                  riskLevel={predicted30m >= 90 ? 'CRITICAL' : predicted30m >= 70 ? 'HIGH' : 'MODERATE'}
+                  progressPct={(predicted30m / 130) * 100}
                   icon={Cpu}
                   subtext="Confidence: 94.2% (Dual-Horizon)"
                 />
 
                 <MetricCard 
                   label="Flood Submergence Risk"
-                  value={`${metrics.flood_probability_pct}%`}
+                  value={`${Math.min(Math.round((currentDepth / 90) * 100), 100)}%`}
                   unit=""
-                  trend={metrics.time_to_critical_min ? `${metrics.time_to_critical_min}m to Critical` : 'Normal Flow'}
-                  trendDirection={metrics.time_to_critical_min ? 'up' : 'neutral'}
-                  riskLevel={metrics.risk_level}
-                  progressPct={metrics.flood_probability_pct}
+                  trend={currentDepth >= 90 ? 'BREACHED (>90cm)' : `${Math.max(Math.round((90 - currentDepth) / Math.max(riseRate, 0.5)), 1)}m to Critical`}
+                  trendDirection={riseRate > 0 ? 'up' : 'neutral'}
+                  riskLevel={riskLevel}
+                  progressPct={Math.min((currentDepth / 90) * 100, 100)}
                   icon={AlertOctagon}
                   subtext="Hydrological Runoff Matrix"
                 />
               </div>
             </div>
 
-            {/* Weather Simulation Scenario Selector */}
-            <div className="glass-panel">
-              <div className="panel-header">
-                <span className="panel-title">
-                  <SlidersHorizontal size={16} style={{ color: '#38bdf8' }} />
-                  Weather Scenarios
-                </span>
-                <span className="panel-badge badge-safe">SIM TESTBENCH</span>
-              </div>
-              <p style={{ fontSize: '0.74rem', color: '#94a3b8', marginBottom: '8px' }}>
-                Simulate flash floods and monsoon spikes to test automatic failover and risk triggers.
-              </p>
-
-              <div className="scenario-pill-group">
-                {Object.entries(SIMULATION_SCENARIOS).map(([key, sc]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`scenario-btn ${activeScenarioKey === key ? 'active' : ''}`}
-                    onClick={() => setActiveScenarioKey(key)}
-                  >
-                    <span>{sc.label.split(' ')[0]} {sc.label.split(' ')[1]}</span>
-                    <span className="rate">{sc.rainfall_mm} mm/h</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            {/* Weather Simulation Control Console */}
+            <SimulationControls 
+              activePreset={activePreset}
+              rainfall={rainfall}
+              soilSaturation={soilSaturation}
+              elapsedMinutes={elapsedMinutes}
+              onSelectPreset={handleSelectPreset}
+              onRainfallChange={handleRainfallChange}
+              onTick={handleTick}
+              onReset={handleReset}
+            />
 
             {/* Sensor Telemetry List */}
             <div className="glass-panel">
@@ -178,7 +248,7 @@ export default function App() {
                 <span className="panel-badge badge-safe">6 ONLINE</span>
               </div>
               <div>
-                {SENSOR_NODES.slice(0, 4).map((sensor) => (
+                {sensors.slice(0, 4).map((sensor) => (
                   <div key={sensor.id} className="sensor-row">
                     <div>
                       <div style={{ fontWeight: 600, color: '#f8fafc' }}>{sensor.name}</div>
@@ -208,11 +278,11 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <AlertTriangle size={18} style={{ color: '#ef4444' }} />
                   <div>
-                    <strong>CRITICAL INUNDATION ADVISORY:</strong> Zone B (Railway Underpass) forecasted to reach 90cm critical depth in {metrics.time_to_critical_min || 18} minutes.
+                    <strong>CRITICAL INUNDATION ADVISORY:</strong> Zone B (Railway Underpass) depth at {currentDepth.toFixed(1)}cm (Forecast: {predicted30m.toFixed(1)}cm at T+30m).
                   </div>
                 </div>
                 <span className="panel-badge badge-critical" style={{ animation: 'pulse-fast 1s infinite' }}>
-                  ACTION REQUIRED
+                  {riskLevel} ALERT
                 </span>
               </div>
 
@@ -268,7 +338,7 @@ export default function App() {
                   }}>
                     <span style={{ color: '#38bdf8', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span className="pulse-dot" />
-                      SECTOR GRID: MUMBAI METROPOLITAN BASIN [19.0760° N, 72.8777° E]
+                      SIMULATION ACTIVE: {activePreset.toUpperCase().replace('_', ' ')} • T+{elapsedMinutes}M
                     </span>
                   </div>
 
@@ -276,7 +346,7 @@ export default function App() {
                     Hydrological Risk Layers & Route Waypoints
                   </h2>
                   <p style={{ color: '#94a3b8', maxWidth: '520px', margin: '0 auto 18px', fontSize: '0.82rem' }}>
-                    Real-time spatial visualization overlaying ultrasonic sensor streams, elevation contours, and dynamic flood inundation polygons.
+                    Live spatial simulation modeling gravity runoff, stormwater drainage throughput, and water rise velocity across city zones.
                   </p>
 
                   {/* Interactive Node Coordinates Grid */}
@@ -287,7 +357,7 @@ export default function App() {
                     maxWidth: '650px', 
                     margin: '0 auto' 
                   }}>
-                    {SENSOR_NODES.map((sensor) => (
+                    {sensors.map((sensor) => (
                       <div 
                         key={sensor.id}
                         style={{
@@ -330,11 +400,11 @@ export default function App() {
                   fontFamily: 'var(--font-mono)'
                 }}>
                   <span style={{ color: '#94a3b8' }}>
-                    COORDINATE SYSTEM: WGS84 • REFRESH: 3.0s • SENSORS: 6/6 SYNCED
+                    INFLUX: {rainfall.toFixed(1)} mm/h • SOIL SAT: {soilSaturation.toFixed(0)}% • SIMULATED T+{elapsedMinutes}m
                   </span>
                   <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <CheckCircle2 size={13} />
-                    LEAFLET ENGINE MOUNT READY
+                    ZERO-HARDWARE SIMULATOR ONLINE
                   </span>
                 </div>
               </div>
@@ -349,19 +419,19 @@ export default function App() {
                   <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
                     <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>CURRENT DEPTH</div>
                     <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc' }}>
-                      {metrics.current_depth_cm.toFixed(1)} <span style={{ fontSize: '0.75rem' }}>cm</span>
+                      {currentDepth.toFixed(1)} <span style={{ fontSize: '0.75rem' }}>cm</span>
                     </div>
                   </div>
                   <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
                     <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>T + 30 MIN PREDICTION</div>
-                    <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800, color: metrics.predicted_30m_cm >= 90 ? '#ef4444' : '#f59e0b' }}>
-                      {metrics.predicted_30m_cm.toFixed(1)} <span style={{ fontSize: '0.75rem' }}>cm</span>
+                    <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800, color: predicted30m >= 90 ? '#ef4444' : '#f59e0b' }}>
+                      {predicted30m.toFixed(1)} <span style={{ fontSize: '0.75rem' }}>cm</span>
                     </div>
                   </div>
                   <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
                     <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>T + 60 MIN PREDICTION</div>
                     <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800, color: '#ef4444' }}>
-                      {metrics.predicted_60m_cm.toFixed(1)} <span style={{ fontSize: '0.75rem' }}>cm</span>
+                      {predicted60m.toFixed(1)} <span style={{ fontSize: '0.75rem' }}>cm</span>
                     </div>
                   </div>
                 </div>

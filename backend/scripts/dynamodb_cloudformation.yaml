@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'FloodGuard - Amazon DynamoDB Table Infrastructure for Urban Flood Telemetry & Zones'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues:
+      - 'development'
+      - 'staging'
+      - 'production'
+    Description: Deployment environment identifier
+
+Resources:
+  # 1. IoT Sensor Telemetry Table
+  SensorReadingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'floodguard_sensor_readings_${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sensor_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: sensor_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: FloodGuard
+        - Key: Environment
+          Value: !Ref Environment
+
+  # 2. Flood Zones Table
+  ZonesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'floodguard_zones_${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: zone_id
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: N
+      KeySchema:
+        - AttributeName: zone_id
+          KeyType: HASH
+        - AttributeName: updated_at
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: FloodGuard
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  SensorReadingsTableName:
+    Description: Name of DynamoDB Sensor Readings Table
+    Value: !Ref SensorReadingsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SensorReadingsTable'
+
+  ZonesTableName:
+    Description: Name of DynamoDB Zones Table
+    Value: !Ref ZonesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ZonesTable'
