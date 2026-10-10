@@ -79,6 +79,11 @@ class DynamoDBClient:
         """Returns True if live AWS DynamoDB is active."""
         return self.use_aws
 
+    @property
+    def is_cloud_active(self) -> bool:
+        """Property returning True if live AWS DynamoDB is active."""
+        return self.use_aws
+
     def save_sensor_reading(self, reading: Dict[str, Any]) -> Dict[str, Any]:
         """Persist a sensor reading to DynamoDB or fallback store."""
         # Always update memory store for instant in-process caching

@@ -6,6 +6,14 @@ import numpy as np
 import pandas as pd
 import joblib
 
+try:
+    from app.aws.s3_client import s3_service
+except ImportError:
+    try:
+        from backend.app.aws.s3_client import s3_service
+    except ImportError:
+        s3_service = None
+
 logger = logging.getLogger("floodguard.ml")
 
 FEATURE_COLUMNS = [
@@ -38,6 +46,12 @@ class FloodModelPredictor:
         path_30m = os.path.join(artifacts_dir, "model_30m.joblib")
         path_60m = os.path.join(artifacts_dir, "model_60m.joblib")
         meta_path = os.path.join(artifacts_dir, "model_meta.json")
+
+        # Check if local artifacts exist; if not, sync from S3
+        if not (os.path.exists(path_30m) and os.path.exists(path_60m)):
+            if s3_service:
+                logger.info("[ML] Artifacts missing locally. Syncing models from Amazon S3...")
+                s3_service.sync_models_from_s3(artifacts_dir)
 
         try:
             if os.path.exists(path_30m) and os.path.exists(path_60m):
