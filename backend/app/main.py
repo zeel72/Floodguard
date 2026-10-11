@@ -17,10 +17,17 @@ app = FastAPI(
 )
 
 # Configure CORS Middleware for Frontend Communication
+cors_origins = settings.CORS_ORIGINS
+allow_creds = True
+if "*" in cors_origins:
+    cors_origins = ["*"]
+    allow_creds = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.amplifyapp\.com|https://.*\.vercel\.app|https://.*\.onrender\.com|http://localhost:.*",
+    allow_credentials=allow_creds,
     allow_methods=["*"],
     allow_headers=["*"],
 )
