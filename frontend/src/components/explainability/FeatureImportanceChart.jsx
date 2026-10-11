@@ -51,7 +51,7 @@ export default function FeatureImportanceChart({
       </div>
 
       <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '10px' }}>
-        Dual-Horizon Feature Impact Decomposition ($R^2 = 0.999$, $\text{MAE} = 1.16\text{ cm}$):
+        Dual-Horizon Feature Impact Decomposition (R² = 0.999, MAE = 1.16 cm):
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
