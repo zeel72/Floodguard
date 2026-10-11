@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import Header from './components/layout/Header';
 import MetricCard from './components/metrics/MetricCard';
 import SimulationControls, { PRESETS } from './components/layout/SimulationControls';
+import WaterLevelChart from './components/metrics/WaterLevelChart';
+import FeatureImportanceChart from './components/explainability/FeatureImportanceChart';
 import FloodMap from './components/map/FloodMap';
+import RoutePlannerPanel from './components/routing/RoutePlannerPanel';
+import AlertBanner from './components/alerts/AlertBanner';
+import AlertsDrawer from './components/alerts/AlertsDrawer';
 import { 
   SENSOR_NODES, 
   ACTIVE_ALERTS, 
@@ -13,7 +18,8 @@ import {
   advanceSimulationTick as apiAdvanceTick,
   adjustRainfall as apiAdjustRainfall,
   getSimulationStatus as apiGetStatus,
-  getZonesGeoJSON as apiGetZonesGeoJSON
+  getZonesGeoJSON as apiGetZonesGeoJSON,
+  getAlerts as apiGetAlerts
 } from './services/api';
 import { 
   CloudRain, 
@@ -46,25 +52,30 @@ export default function App() {
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
   const [sensors, setSensors] = useState(SENSOR_NODES);
   const [zonesGeoJSON, setZonesGeoJSON] = useState(null);
+  const [activeRoute, setActiveRoute] = useState(null);
+  const [alerts, setAlerts] = useState(ACTIVE_ALERTS);
 
-  const fetchZones = async () => {
+  const fetchZonesAndAlerts = async () => {
     try {
-      const geo = await apiGetZonesGeoJSON();
-      if (geo && geo.features) {
-        setZonesGeoJSON(geo);
-      }
+      const [geo, alts] = await Promise.all([
+        apiGetZonesGeoJSON(),
+        apiGetAlerts()
+      ]);
+      if (geo && geo.features) setZonesGeoJSON(geo);
+      if (alts && alts.length > 0) setAlerts(alts);
     } catch (err) {
       // Mock fallback
     }
   };
 
-  // Poll or sync simulation state on mount
+  // Poll or sync simulation state on mount + continuous 3.5s interval
   useEffect(() => {
     async function initSim() {
       try {
-        const [state, geo] = await Promise.all([
+        const [state, geo, alts] = await Promise.all([
           apiGetStatus(),
-          apiGetZonesGeoJSON()
+          apiGetZonesGeoJSON(),
+          apiGetAlerts()
         ]);
         if (state && state.rainfall_1h_mm !== undefined) {
           applySimulationState(state);
@@ -72,11 +83,33 @@ export default function App() {
         if (geo && geo.features) {
           setZonesGeoJSON(geo);
         }
+        if (alts && alts.length > 0) {
+          setAlerts(alts);
+        }
       } catch (err) {
         // Mock fallback active
       }
     }
     initSim();
+
+    const interval = setInterval(async () => {
+      try {
+        const [state, alts] = await Promise.all([
+          apiGetStatus(),
+          apiGetAlerts()
+        ]);
+        if (state && state.rainfall_1h_mm !== undefined) {
+          applySimulationState(state);
+        }
+        if (alts && alts.length > 0) {
+          setAlerts(alts);
+        }
+      } catch (err) {
+        // quiet fallback
+      }
+    }, 3500);
+
+    return () => clearInterval(interval);
   }, []);
 
   const applySimulationState = (state) => {
@@ -90,6 +123,10 @@ export default function App() {
     if (state.active_preset) setActivePreset(state.active_preset);
 
     if (state.zones && state.zones.length > 0) {
+      const maxRise = Math.max(...state.zones.map(z => z.rise_rate_cm_per_min || 0));
+      if (Number.isFinite(maxRise)) {
+        setRiseRate(Number(maxRise.toFixed(2)));
+      }
       setSensors((prev) => 
         prev.map((s) => {
           const match = state.zones.find((z) => z.sensor_id === s.id);
@@ -111,12 +148,14 @@ export default function App() {
     setActivePreset(presetId);
     try {
       await apiSetScenario(presetId);
-      const [state, geo] = await Promise.all([
+      const [state, geo, alts] = await Promise.all([
         apiGetStatus(),
-        apiGetZonesGeoJSON()
+        apiGetZonesGeoJSON(),
+        apiGetAlerts()
       ]);
       if (state) applySimulationState(state);
       if (geo) setZonesGeoJSON(geo);
+      if (alts) setAlerts(alts);
     } catch (err) {
       // Local fallback calculation
       const p = PRESETS.find((x) => x.id === presetId);
@@ -134,12 +173,14 @@ export default function App() {
     setRainfall(newVal);
     try {
       await apiAdjustRainfall(newVal);
-      const [state, geo] = await Promise.all([
+      const [state, geo, alts] = await Promise.all([
         apiGetStatus(),
-        apiGetZonesGeoJSON()
+        apiGetZonesGeoJSON(),
+        apiGetAlerts()
       ]);
       if (state) applySimulationState(state);
       if (geo) setZonesGeoJSON(geo);
+      if (alts) setAlerts(alts);
     } catch (err) {
       setCurrentDepth(newVal * 0.7);
     }
@@ -152,7 +193,7 @@ export default function App() {
       if (res && res.state) {
         applySimulationState(res.state);
       }
-      fetchZones();
+      fetchZonesAndAlerts();
     } catch (err) {
       setCurrentDepth((prev) => Math.min(prev + (riseRate * mins), 200));
     }
@@ -161,7 +202,7 @@ export default function App() {
   const handleReset = async () => {
     await handleSelectPreset('dry');
     setElapsedMinutes(0);
-    fetchZones();
+    fetchZonesAndAlerts();
   };
 
   const handleToggleMode = () => {
@@ -268,6 +309,17 @@ export default function App() {
               onReset={handleReset}
             />
 
+            {/* Phase 13: Dual-Horizon Telemetry & ML Forecast Area Chart */}
+            <WaterLevelChart 
+              currentDepth={currentDepth}
+              predicted30m={predicted30m}
+              predicted60m={predicted60m}
+              riseRate={riseRate}
+            />
+
+            {/* Phase 13: XGBoost Explainable AI SHAP Decomposition */}
+            <FeatureImportanceChart />
+
             {/* Sensor Telemetry List */}
             <div className="glass-panel">
               <div className="panel-header">
@@ -303,18 +355,8 @@ export default function App() {
               ============================================================== */}
           <section className="command-col command-col-center" aria-label="Command Center Map Console">
             <div className="glass-panel map-viewport-panel">
-              {/* Tactical Alert Banner */}
-              <div className="threat-ribbon">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AlertTriangle size={18} style={{ color: '#ef4444' }} />
-                  <div>
-                    <strong>CRITICAL INUNDATION ADVISORY:</strong> Zone B (Railway Underpass) depth at {currentDepth.toFixed(1)}cm (Forecast: {predicted30m.toFixed(1)}cm at T+30m).
-                  </div>
-                </div>
-                <span className="panel-badge badge-critical" style={{ animation: 'pulse-fast 1s infinite' }}>
-                  {riskLevel} ALERT
-                </span>
-              </div>
+              {/* Phase 12: Dynamic Critical Emergency Advisory Banner */}
+              <AlertBanner alerts={alerts} />
 
               {/* Console Map Header Controls */}
               <div className="map-viewport-header">
@@ -356,6 +398,7 @@ export default function App() {
                 zonesGeoJSON={zonesGeoJSON}
                 sensors={sensors}
                 activeFilter={filterLayer}
+                activeRoute={activeRoute}
               />
 
               {/* Water Level Horizon Barometer */}
@@ -392,119 +435,17 @@ export default function App() {
               RIGHT COLUMN: Safe Emergency Routing & Actionable Alerts
               ============================================================== */}
           <section className="command-col command-col-right" aria-label="Routing and Alerts">
-            {/* SafeRoute Emergency Routing Module */}
-            <div className="glass-panel">
-              <div className="panel-header">
-                <span className="panel-title">
-                  <Navigation size={16} style={{ color: '#10b981' }} />
-                  SafeRoute Navigator
-                </span>
-                <span className="panel-badge badge-safe">A* DIJKSTRA</span>
-              </div>
+            {/* Phase 11: Interactive SafeRoute A* Emergency Planner */}
+            <RoutePlannerPanel 
+              onRouteCalculated={(route) => setActiveRoute(route)}
+              currentRoute={activeRoute}
+            />
 
-              <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginBottom: '10px' }}>
-                Hydrology-weighted graph routing actively bypassing road segments exceeding 50cm water depth.
-              </div>
-
-              {/* Waypoint Selectors */}
-              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', marginBottom: '12px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <MapPin size={14} style={{ color: '#38bdf8' }} />
-                  <span style={{ fontSize: '0.75rem', color: '#f8fafc', fontWeight: 600 }}>{ROUTE_DEMO.origin}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <MapPin size={14} style={{ color: '#10b981' }} />
-                  <span style={{ fontSize: '0.75rem', color: '#f8fafc', fontWeight: 600 }}>{ROUTE_DEMO.destination}</span>
-                </div>
-              </div>
-
-              {/* Safe Route (Recommended) */}
-              <div className="route-preview-card safe">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <ShieldCheck size={16} /> RECOMMENDED SAFE ROUTE
-                  </span>
-                  <span className="panel-badge badge-safe">100% PASSABLE</span>
-                </div>
-                <div className="route-stat-grid">
-                  <div className="route-stat-box">
-                    <div className="route-stat-label">Distance</div>
-                    <div className="route-stat-val">{ROUTE_DEMO.safeRoute.distance_km} km</div>
-                  </div>
-                  <div className="route-stat-box">
-                    <div className="route-stat-label">ETA</div>
-                    <div className="route-stat-val">{ROUTE_DEMO.safeRoute.eta_min} min</div>
-                  </div>
-                  <div className="route-stat-box">
-                    <div className="route-stat-label">Max Depth</div>
-                    <div className="route-stat-val" style={{ color: '#10b981' }}>{ROUTE_DEMO.safeRoute.maxFloodDepth_cm} cm</div>
-                  </div>
-                </div>
-                <p style={{ fontSize: '0.72rem', color: '#94a3b8', lineHeight: 1.4 }}>
-                  {ROUTE_DEMO.safeRoute.recommendation}
-                </p>
-              </div>
-
-              {/* Standard Shortest Route (Warning) */}
-              <div className="route-preview-card danger">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <AlertTriangle size={16} /> STANDARD SHORTEST ROUTE
-                  </span>
-                  <span className="panel-badge badge-critical">BLOCKED</span>
-                </div>
-                <div className="route-stat-grid">
-                  <div className="route-stat-box">
-                    <div className="route-stat-label">Distance</div>
-                    <div className="route-stat-val">{ROUTE_DEMO.standardRoute.distance_km} km</div>
-                  </div>
-                  <div className="route-stat-box">
-                    <div className="route-stat-label">ETA</div>
-                    <div className="route-stat-val">{ROUTE_DEMO.standardRoute.eta_min} min</div>
-                  </div>
-                  <div className="route-stat-box">
-                    <div className="route-stat-label">Max Depth</div>
-                    <div className="route-stat-val" style={{ color: '#ef4444' }}>{ROUTE_DEMO.standardRoute.maxFloodDepth_cm} cm</div>
-                  </div>
-                </div>
-                <p style={{ fontSize: '0.72rem', color: '#ef4444', lineHeight: 1.4 }}>
-                  {ROUTE_DEMO.standardRoute.warning}
-                </p>
-              </div>
-            </div>
-
-            {/* Live Alerts Drawer */}
-            <div className="glass-panel">
-              <div className="panel-header">
-                <span className="panel-title">
-                  <AlertOctagon size={16} style={{ color: '#f59e0b' }} />
-                  Live Threshold Alerts
-                </span>
-                <span className="panel-badge badge-critical">
-                  {ACTIVE_ALERTS.length} ACTIVE
-                </span>
-              </div>
-
-              <div>
-                {ACTIVE_ALERTS.map((alert) => (
-                  <div 
-                    key={alert.id} 
-                    className={`alert-item ${alert.severity === 'CRITICAL' ? 'alert-critical' : alert.severity === 'HIGH' ? 'alert-high' : 'alert-moderate'}`}
-                  >
-                    <div className="alert-top">
-                      <span className="alert-title">{alert.title}</span>
-                      <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>{alert.timestamp}</span>
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: '#cbd5e1', fontWeight: 600 }}>{alert.zone}</div>
-                    <p className="alert-desc">{alert.message}</p>
-                    <div className="alert-action">
-                      <ArrowRight size={12} />
-                      {alert.action}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Phase 12: Live Early Warning & Threshold Alerts Drawer */}
+            <AlertsDrawer 
+              alerts={alerts} 
+              onRefresh={fetchZonesAndAlerts} 
+            />
           </section>
         </div>
       </main>

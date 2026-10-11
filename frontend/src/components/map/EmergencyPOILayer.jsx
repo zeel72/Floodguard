@@ -92,7 +92,22 @@ const SAFE_EVACUATION_PATH = [
   [19.0880, 72.9020]
 ];
 
-export default function EmergencyPOILayer({ showRoutes = true, showPois = true }) {
+export default function EmergencyPOILayer({ 
+  showRoutes = true, 
+  showPois = true,
+  activeRoute = null 
+}) {
+  const safeWaypoints = activeRoute?.safe_flood_avoidance_route?.waypoints?.length > 1
+    ? activeRoute.safe_flood_avoidance_route.waypoints
+    : SAFE_EVACUATION_PATH;
+
+  const blockedWaypoints = activeRoute?.standard_shortest_route?.waypoints?.length > 1
+    ? activeRoute.standard_shortest_route.waypoints
+    : BLOCKED_SHORTEST_PATH;
+
+  const safeInfo = activeRoute?.safe_flood_avoidance_route;
+  const standardInfo = activeRoute?.standard_shortest_route;
+
   return (
     <>
       {/* Route Overlays: Green Safe Route vs Red Flooded Route */}
@@ -100,7 +115,7 @@ export default function EmergencyPOILayer({ showRoutes = true, showPois = true }
         <>
           {/* Safe Route (Recommended - Green Neon) */}
           <Polyline
-            positions={SAFE_EVACUATION_PATH}
+            positions={safeWaypoints}
             pathOptions={{
               color: '#10b981',
               weight: 5,
@@ -112,10 +127,10 @@ export default function EmergencyPOILayer({ showRoutes = true, showPois = true }
               <div style={{ padding: '4px' }}>
                 <span className="panel-badge badge-safe">RECOMMENDED SAFE ROUTE</span>
                 <div style={{ fontWeight: 700, marginTop: '4px', color: '#10b981' }}>
-                  Via Eastern Ridge Flyover (Elev 19.2m)
+                  {safeInfo?.narrative || 'Via Eastern Ridge Flyover (Elev 19.2m)'}
                 </div>
                 <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: '2px' }}>
-                  100% passability guarantee • 5.6 km (13 mins)
+                  100% passability • {safeInfo?.distance_km ?? 5.6} km ({safeInfo?.eta_min ?? 13} mins)
                 </div>
               </div>
             </Popup>
@@ -123,7 +138,7 @@ export default function EmergencyPOILayer({ showRoutes = true, showPois = true }
 
           {/* Blocked Shortest Route (Warning - Red Dashed) */}
           <Polyline
-            positions={BLOCKED_SHORTEST_PATH}
+            positions={blockedWaypoints}
             pathOptions={{
               color: '#ef4444',
               weight: 4,
@@ -133,12 +148,14 @@ export default function EmergencyPOILayer({ showRoutes = true, showPois = true }
           >
             <Popup className="floodguard-popup">
               <div style={{ padding: '4px' }}>
-                <span className="panel-badge badge-critical">HAZARD: IMPASSABLE ROUTE</span>
+                <span className="panel-badge badge-critical">
+                  {standardInfo?.passability === 'CLEAR & SAFE' ? 'STANDARD GPS ROUTE' : 'HAZARD: IMPASSABLE ROUTE'}
+                </span>
                 <div style={{ fontWeight: 700, marginTop: '4px', color: '#ef4444' }}>
-                  Central Underpass Submerged (82cm Depth)
+                  {standardInfo?.narrative || 'Central Underpass Submerged (82cm Depth)'}
                 </div>
                 <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: '2px' }}>
-                  Ambulance stall risk: 96% • DO NOT ENTER
+                  Max water depth: {standardInfo?.max_flood_depth_cm ?? 82.4} cm • {standardInfo?.distance_km ?? 4.8} km
                 </div>
               </div>
             </Popup>

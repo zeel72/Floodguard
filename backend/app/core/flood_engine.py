@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 try:
     from app.config import settings
@@ -150,3 +150,101 @@ def evaluate_zone_risk(
         "road_penalty_multiplier": penalty,
         "elevation_m": elevation_m
     }
+
+
+def generate_zone_alerts(risk_profiles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Evaluates real-time threshold rules across urban zone risk profiles to generate
+    prioritized, human-actionable early warning notifications.
+    
+    Rules Evaluated:
+      - CRITICAL: Depth >= 90cm OR Predicted 30m >= 90cm OR T_crit <= 25 mins.
+      - WARNING:  Depth 70-90cm OR Predicted 60m >= 70cm.
+      - ADVISORY: Rise Rate > 1.0 cm/min OR Depth 50-70cm.
+    """
+    alerts = []
+    
+    for prof in risk_profiles:
+        zid = prof.get("zone_id", "ZONE_UNKNOWN")
+        zname = prof.get("name", f"Zone {zid.replace('ZONE_', '')}")
+        depth = prof.get("current_depth_cm", 0.0)
+        p30 = prof.get("predicted_depth_30m_cm", 0.0)
+        p60 = prof.get("predicted_depth_60m_cm", 0.0)
+        rise = prof.get("water_rise_rate_cm_per_min", 0.0)
+        t_crit = prof.get("time_to_critical_min")
+        
+        # 1. Critical Submergence Emergency
+        if depth >= 90.0 or p30 >= 90.0 or (t_crit is not None and t_crit <= 25.0 and rise > 1.2):
+            time_msg = f"within {t_crit:.0f} mins" if t_crit else "imminently"
+            alerts.append({
+                "id": f"ALT-{zid}-CRIT",
+                "timestamp": "Active Now",
+                "severity": "CRITICAL",
+                "zone_id": zid,
+                "zone_name": zname,
+                "title": f"Critical Submergence Projected {time_msg}",
+                "message": (
+                    f"{zname} depth currently at {depth:.1f}cm (Rise: +{rise:.1f} cm/min). "
+                    f"XGBoost forecasts {p30:.1f}cm at T+30m exceeding 90cm critical limit."
+                ),
+                "action": "Immediate road closure mandated. Reroute all traffic via Eastern Ridge Flyover.",
+                "priority": 1,
+                "time_to_critical_min": t_crit,
+                "current_depth_cm": depth
+            })
+        # 2. High Water Warning
+        elif depth >= 70.0 or p60 >= 70.0:
+            alerts.append({
+                "id": f"ALT-{zid}-WARN",
+                "timestamp": "Updated 2m ago",
+                "severity": "HIGH",
+                "zone_id": zid,
+                "zone_name": zname,
+                "title": "Severe Fording Hazard Warning",
+                "message": (
+                    f"Water depth at {depth:.1f}cm with +{rise:.1f} cm/min inflow velocity. "
+                    f"Low clearance passenger vehicles and standard ambulances face stall risk."
+                ),
+                "action": "Dispatch high-clearance rescue vehicles and automated municipal stormwater pumps.",
+                "priority": 2,
+                "time_to_critical_min": t_crit,
+                "current_depth_cm": depth
+            })
+        # 3. Moderate Advisory
+        elif rise >= 1.0 or depth >= 50.0:
+            alerts.append({
+                "id": f"ALT-{zid}-ADV",
+                "timestamp": "Updated 5m ago",
+                "severity": "MODERATE",
+                "zone_id": zid,
+                "zone_name": zname,
+                "title": "Stormwater Drainage Chokepoint Detected",
+                "message": (
+                    f"Water rise rate at +{rise:.1f} cm/min. Drainage capacity strained by runoff influx."
+                ),
+                "action": "First responders advised to monitor culvert outflow; pre-position sandbags.",
+                "priority": 3,
+                "time_to_critical_min": t_crit,
+                "current_depth_cm": depth
+            })
+
+    # Sort alerts by priority (CRITICAL=1, HIGH=2, MODERATE=3) then depth descending
+    alerts.sort(key=lambda a: (a["priority"], -a["current_depth_cm"]))
+
+    # If no alerts triggered, provide reassurance all-clear alert
+    if not alerts:
+        alerts.append({
+            "id": "ALT-SYS-OK",
+            "timestamp": "Just now",
+            "severity": "SAFE",
+            "zone_id": "ZONE_ALL",
+            "zone_name": "All Municipal Sectors",
+            "title": "All Municipal Corridors Clear & Passable",
+            "message": "All monitored arterial underpasses and road corridors below 50cm. Gravity drainage operating optimally.",
+            "action": "Routine hydrologic doppler surveillance active.",
+            "priority": 4,
+            "time_to_critical_min": None,
+            "current_depth_cm": 0.0
+        })
+
+    return alerts

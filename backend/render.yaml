@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: floodguard-backend
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt httpx
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: ENVIRONMENT
+        value: production
+      - key: AWS_REGION
+        value: ap-southeast-2
+      - key: S3_BUCKET_NAME
+        value: floodguard-models-945211624937
+      - key: AWS_MOCK_MODE
+        value: "false"

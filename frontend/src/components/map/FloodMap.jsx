@@ -12,7 +12,8 @@ const DEFAULT_ZOOM = 13;
 export default function FloodMap({
   zonesGeoJSON,
   sensors = [],
-  activeFilter = 'all'
+  activeFilter = 'all',
+  activeRoute = null
 }) {
   const [layers, setLayers] = useState({
     zones: true,
@@ -67,6 +68,7 @@ export default function FloodMap({
         <EmergencyPOILayer 
           showRoutes={layers.route}
           showPois={layers.pois}
+          activeRoute={activeRoute}
         />
       </MapContainer>
 

@@ -1,0 +1,234 @@
+{
+  "metadata": {
+    "city": "Mumbai Metropolitan Region (MMR)",
+    "crs": "EPSG:4326",
+    "description": "Hydrology-annotated urban road network graph for flood emergency routing",
+    "version": "1.0.0"
+  },
+  "nodes": {
+    "NODE_AMBULANCE_DEPOT": {
+      "id": "NODE_AMBULANCE_DEPOT",
+      "name": "Fire Station #7 / Ambulance Bay #4",
+      "lat": 19.0680,
+      "lng": 72.8910,
+      "elevation_m": 16.8,
+      "zone_id": "ZONE_E",
+      "facility_type": "emergency_depot"
+    },
+    "NODE_METRO_HOSPITAL": {
+      "id": "NODE_METRO_HOSPITAL",
+      "name": "St. Jude Trauma Emergency Hospital",
+      "lat": 19.0880,
+      "lng": 72.9020,
+      "elevation_m": 19.2,
+      "zone_id": "ZONE_A",
+      "facility_type": "hospital"
+    },
+    "NODE_CENTRAL_UNDERPASS": {
+      "id": "NODE_CENTRAL_UNDERPASS",
+      "name": "Central Railway Underpass Portal",
+      "lat": 19.0760,
+      "lng": 72.8777,
+      "elevation_m": 6.2,
+      "zone_id": "ZONE_B",
+      "facility_type": "underpass_chokepoint"
+    },
+    "NODE_SOUTHERN_CONNECTOR": {
+      "id": "NODE_SOUTHERN_CONNECTOR",
+      "name": "Southern Relief Connector Junction",
+      "lat": 19.0720,
+      "lng": 72.8850,
+      "elevation_m": 11.4,
+      "zone_id": "ZONE_E",
+      "facility_type": "intersection"
+    },
+    "NODE_RIDGE_FLYOVER": {
+      "id": "NODE_RIDGE_FLYOVER",
+      "name": "Eastern Express Ridge Flyover Entrance",
+      "lat": 19.0840,
+      "lng": 72.8980,
+      "elevation_m": 19.2,
+      "zone_id": "ZONE_A",
+      "facility_type": "elevated_corridor"
+    },
+    "NODE_MID_HIGHWAY": {
+      "id": "NODE_MID_HIGHWAY",
+      "name": "Highland Bypass Interchange",
+      "lat": 19.0750,
+      "lng": 72.8980,
+      "elevation_m": 17.5,
+      "zone_id": "ZONE_A",
+      "facility_type": "intersection"
+    },
+    "NODE_MAHIM_CREEK": {
+      "id": "NODE_MAHIM_CREEK",
+      "name": "Mahim Creek Culvert Crossing",
+      "lat": 19.0820,
+      "lng": 72.8690,
+      "elevation_m": 7.1,
+      "zone_id": "ZONE_C",
+      "facility_type": "river_crossing"
+    },
+    "NODE_METRO_STATION": {
+      "id": "NODE_METRO_STATION",
+      "name": "Metro Station North Plaza",
+      "lat": 19.0910,
+      "lng": 72.8850,
+      "elevation_m": 12.5,
+      "zone_id": "ZONE_D",
+      "facility_type": "transit_hub"
+    },
+    "NODE_RESIDENTIAL_SEC4": {
+      "id": "NODE_RESIDENTIAL_SEC4",
+      "name": "Sector 4 Lowland Residential Gateway",
+      "lat": 19.0600,
+      "lng": 72.8720,
+      "elevation_m": 8.4,
+      "zone_id": "ZONE_F",
+      "facility_type": "residential_access"
+    },
+    "NODE_UNDERPASS_NORTH_EXIT": {
+      "id": "NODE_UNDERPASS_NORTH_EXIT",
+      "name": "Underpass Northern Ramp",
+      "lat": 19.0810,
+      "lng": 72.8810,
+      "elevation_m": 8.0,
+      "zone_id": "ZONE_B",
+      "facility_type": "intersection"
+    }
+  },
+  "edges": [
+    {
+      "id": "EDGE_DEPOT_TO_SOUTHERN",
+      "u": "NODE_AMBULANCE_DEPOT",
+      "v": "NODE_SOUTHERN_CONNECTOR",
+      "road_name": "Medical Corridor Avenue",
+      "length_km": 0.8,
+      "speed_limit_kmh": 50,
+      "zone_id": "ZONE_E",
+      "elevation_m": 14.1,
+      "road_type": "arterial"
+    },
+    {
+      "id": "EDGE_SOUTHERN_TO_UNDERPASS",
+      "u": "NODE_SOUTHERN_CONNECTOR",
+      "v": "NODE_CENTRAL_UNDERPASS",
+      "road_name": "Railway Dip Approach Road",
+      "length_km": 1.2,
+      "speed_limit_kmh": 45,
+      "zone_id": "ZONE_B",
+      "elevation_m": 8.8,
+      "road_type": "subway_dip"
+    },
+    {
+      "id": "EDGE_UNDERPASS_TO_NORTH_EXIT",
+      "u": "NODE_CENTRAL_UNDERPASS",
+      "v": "NODE_UNDERPASS_NORTH_EXIT",
+      "road_name": "Central Railway Underpass Basin",
+      "length_km": 0.7,
+      "speed_limit_kmh": 35,
+      "zone_id": "ZONE_B",
+      "elevation_m": 6.2,
+      "road_type": "submerged_underpass"
+    },
+    {
+      "id": "EDGE_NORTH_EXIT_TO_HOSPITAL",
+      "u": "NODE_UNDERPASS_NORTH_EXIT",
+      "v": "NODE_METRO_HOSPITAL",
+      "road_name": "North Metro Link Road",
+      "length_km": 1.5,
+      "speed_limit_kmh": 50,
+      "zone_id": "ZONE_D",
+      "elevation_m": 15.8,
+      "road_type": "arterial"
+    },
+    {
+      "id": "EDGE_DEPOT_TO_MID_HIGHWAY",
+      "u": "NODE_AMBULANCE_DEPOT",
+      "v": "NODE_MID_HIGHWAY",
+      "road_name": "Ridge East Access Ramp",
+      "length_km": 2.1,
+      "speed_limit_kmh": 60,
+      "zone_id": "ZONE_A",
+      "elevation_m": 17.1,
+      "road_type": "elevated_ramp"
+    },
+    {
+      "id": "EDGE_MID_HIGHWAY_TO_RIDGE",
+      "u": "NODE_MID_HIGHWAY",
+      "v": "NODE_RIDGE_FLYOVER",
+      "road_name": "Eastern Express Ridge Flyover",
+      "length_km": 2.4,
+      "speed_limit_kmh": 65,
+      "zone_id": "ZONE_A",
+      "elevation_m": 19.2,
+      "road_type": "express_flyover"
+    },
+    {
+      "id": "EDGE_RIDGE_TO_HOSPITAL",
+      "u": "NODE_RIDGE_FLYOVER",
+      "v": "NODE_METRO_HOSPITAL",
+      "road_name": "Hospital Ridge Direct Feeder",
+      "length_km": 1.1,
+      "speed_limit_kmh": 40,
+      "zone_id": "ZONE_A",
+      "elevation_m": 19.2,
+      "road_type": "hospital_approach"
+    },
+    {
+      "id": "EDGE_SOUTHERN_TO_RESIDENTIAL",
+      "u": "NODE_SOUTHERN_CONNECTOR",
+      "v": "NODE_RESIDENTIAL_SEC4",
+      "road_name": "Sector 4 Lowland Boulevard",
+      "length_km": 1.6,
+      "speed_limit_kmh": 40,
+      "zone_id": "ZONE_F",
+      "elevation_m": 9.9,
+      "road_type": "collector"
+    },
+    {
+      "id": "EDGE_RESIDENTIAL_TO_MAHIM",
+      "u": "NODE_RESIDENTIAL_SEC4",
+      "v": "NODE_MAHIM_CREEK",
+      "road_name": "Creek Causeway Road",
+      "length_km": 2.4,
+      "speed_limit_kmh": 40,
+      "zone_id": "ZONE_C",
+      "elevation_m": 7.7,
+      "road_type": "causeway"
+    },
+    {
+      "id": "EDGE_MAHIM_TO_NORTH_EXIT",
+      "u": "NODE_MAHIM_CREEK",
+      "v": "NODE_UNDERPASS_NORTH_EXIT",
+      "road_name": "North Creek Embankment",
+      "length_km": 1.3,
+      "speed_limit_kmh": 45,
+      "zone_id": "ZONE_C",
+      "elevation_m": 8.1,
+      "road_type": "embankment"
+    },
+    {
+      "id": "EDGE_NORTH_EXIT_TO_METRO",
+      "u": "NODE_UNDERPASS_NORTH_EXIT",
+      "v": "NODE_METRO_STATION",
+      "road_name": "Metro Transit Spine",
+      "length_km": 1.2,
+      "speed_limit_kmh": 50,
+      "zone_id": "ZONE_D",
+      "elevation_m": 11.2,
+      "road_type": "arterial"
+    },
+    {
+      "id": "EDGE_METRO_TO_HOSPITAL",
+      "u": "NODE_METRO_STATION",
+      "v": "NODE_METRO_HOSPITAL",
+      "road_name": "Trauma Emergency Direct Spoke",
+      "length_km": 1.8,
+      "speed_limit_kmh": 50,
+      "zone_id": "ZONE_A",
+      "elevation_m": 15.8,
+      "road_type": "arterial"
+    }
+  ]
+}

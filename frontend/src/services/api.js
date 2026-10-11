@@ -140,12 +140,33 @@ export async function requestPrediction(params) {
 /**
  * Calculate A* safe emergency route
  */
-export async function calculateRoute(origin, destination) {
+export async function calculateRoute(origin, destination, maxTolerableDepth = 50.0) {
   try {
-    const res = await apiClient.post('/api/v1/route', { origin, destination });
+    const res = await apiClient.post('/api/v1/route', { 
+      origin, 
+      destination,
+      max_tolerable_depth_cm: maxTolerableDepth
+    });
     return res.data;
   } catch (err) {
     return ROUTE_DEMO;
+  }
+}
+
+/**
+ * Fetch available road network nodes for route planning
+ */
+export async function getRoutingNodes() {
+  try {
+    const res = await apiClient.get('/api/v1/route/nodes');
+    return res.data;
+  } catch (err) {
+    return [
+      { id: "NODE_AMBULANCE_DEPOT", name: "Fire Station #7 / Ambulance Bay #4", elevation_m: 16.8 },
+      { id: "NODE_METRO_HOSPITAL", name: "St. Jude Trauma Emergency Hospital", elevation_m: 19.2 },
+      { id: "NODE_RESIDENTIAL_SEC4", name: "Sector 4 Lowland Gateway", elevation_m: 8.4 },
+      { id: "NODE_METRO_STATION", name: "Metro Station North Plaza", elevation_m: 12.5 }
+    ];
   }
 }
 

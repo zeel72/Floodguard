@@ -1,6 +1,15 @@
 from fastapi import APIRouter
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
+
+try:
+    from app.core.simulator import simulator
+    from app.core.flood_engine import evaluate_zone_risk, generate_zone_alerts
+    from app.ml.model import predict_water_level
+except ImportError:
+    from backend.app.core.simulator import simulator
+    from backend.app.core.flood_engine import evaluate_zone_risk, generate_zone_alerts
+    from backend.app.ml.model import predict_water_level
 
 router = APIRouter(prefix="/alerts", tags=["Emergency Flood Alerts"])
 
@@ -14,40 +23,46 @@ class FloodAlert(BaseModel):
     title: str
     message: str
     action: str
+    priority: Optional[int] = 1
+    time_to_critical_min: Optional[float] = None
+    current_depth_cm: Optional[float] = None
 
 
 @router.get("", response_model=List[FloodAlert])
 def get_active_alerts():
-    """Retrieve all current active high and critical flood warnings."""
-    return [
-        FloodAlert(
-            id="ALT-904",
-            timestamp="2 mins ago",
-            severity="CRITICAL",
-            zone_id="ZONE_B",
-            zone_name="Zone B (Central Underpass)",
-            title="Projected Road Submergence in 18 Mins",
-            message="Ultrasonic telemetry indicates water rise rate at +4.1 cm/min. Depth reaching 90cm critical limit.",
-            action="Emergency traffic diversion recommended immediately."
-        ),
-        FloodAlert(
-            id="ALT-903",
-            timestamp="8 mins ago",
-            severity="HIGH",
-            zone_id="ZONE_C",
-            zone_name="Zone C (Mahim Creek)",
-            title="Storm Drain Chokepoint Detected",
-            message="Culvert discharge speed down by 40% due to debris accumulation. Water level +2.8 cm/min.",
-            action="Dispatched automated municipal pump activation notice."
-        ),
-        FloodAlert(
-            id="ALT-902",
-            timestamp="19 mins ago",
-            severity="MODERATE",
-            zone_id="ZONE_F",
-            zone_name="Zone F (Lowland Housing)",
-            title="30-Min Flood Probability Exceeds 65%",
-            message="XGBoost hydrological model forecasting 78cm saturation within 45 minutes.",
-            action="First responders alerted for non-critical route bypass."
+    """
+    Evaluates live telemetry and XGBoost forecasts across all urban flood zones
+    to generate real-time early warnings, time-to-critical countdowns, and action plans.
+    """
+    sim_status = simulator.get_status()
+    rainfall = sim_status.get("rainfall_1h_mm", 0.0)
+    soil_sat = sim_status.get("soil_saturation_pct", 50.0)
+
+    risk_profiles = []
+    for z in sim_status.get("zones", []):
+        zid = z["zone_id"]
+        depth = z["water_depth_cm"]
+        rise = z["rise_rate_cm_per_min"]
+        elevation = z["elevation_m"]
+
+        ml_res = predict_water_level({
+            "rainfall_1h_mm": rainfall,
+            "current_water_level_cm": depth,
+            "water_rise_rate_cm_per_min": rise,
+            "elevation_m": elevation,
+            "soil_saturation_pct": soil_sat
+        })
+
+        eval_res = evaluate_zone_risk(
+            zone_id=zid,
+            current_depth_cm=depth,
+            predicted_30m_cm=ml_res["predicted_depth_30m_cm"],
+            predicted_60m_cm=ml_res["predicted_depth_60m_cm"],
+            rise_rate_cm_per_min=rise,
+            elevation_m=elevation
         )
-    ]
+        eval_res["name"] = z.get("name", zid)
+        risk_profiles.append(eval_res)
+
+    alerts = generate_zone_alerts(risk_profiles)
+    return [FloodAlert(**a) for a in alerts]
