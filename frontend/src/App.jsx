@@ -234,6 +234,18 @@ export default function App() {
               LEFT COLUMN: Hydrological Telemetry & Simulation Controls
               ============================================================== */}
           <section className="command-col command-col-left" aria-label="Hydrology and Telemetry">
+            {/* Weather Simulation Control Console (Primary Interactive Controls) */}
+            <SimulationControls 
+              activePreset={activePreset}
+              rainfall={rainfall}
+              soilSaturation={soilSaturation}
+              elapsedMinutes={elapsedMinutes}
+              onSelectPreset={handleSelectPreset}
+              onRainfallChange={handleRainfallChange}
+              onTick={handleTick}
+              onReset={handleReset}
+            />
+
             {/* Real-time KPI Cards */}
             <div className="glass-panel">
               <div className="panel-header">
@@ -296,18 +308,6 @@ export default function App() {
                 />
               </div>
             </div>
-
-            {/* Weather Simulation Control Console */}
-            <SimulationControls 
-              activePreset={activePreset}
-              rainfall={rainfall}
-              soilSaturation={soilSaturation}
-              elapsedMinutes={elapsedMinutes}
-              onSelectPreset={handleSelectPreset}
-              onRainfallChange={handleRainfallChange}
-              onTick={handleTick}
-              onReset={handleReset}
-            />
 
             {/* Phase 13: Dual-Horizon Telemetry & ML Forecast Area Chart */}
             <WaterLevelChart 
